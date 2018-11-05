@@ -25,6 +25,7 @@ import { Queue } from './queue';
 
 import * as glob from 'glob';
 import { Module } from "./module";
+import { MissionModule } from './modules/mission';
 
 const links = {
     unitEventHandlers: "https://community.bistudio.com/wiki/Arma_3:_Event_Handlers",
@@ -52,15 +53,17 @@ export interface SQFLintSettings {
 	includePrefixes: { [key: string]: string };
 	discoverDescriptionFiles: boolean;
 	descriptionFiles: string[];
+	contextSeparation: boolean;
 }
 
 /**
  * List of variables local to document.
  */
 interface DocumentVariables {
-	[ uri: string ] : { [name: string]: DocumentVariable };
+	[ uri: string ] : DocumentVariablesList;
 }
 
+interface DocumentVariablesList { [name: string]: DocumentVariable }
 /**
  * Variable local to document. Contains locations local to document.
  */
@@ -177,6 +180,7 @@ export class SQFLintServer {
 	private indexed: boolean = false;
 
 	public extModule: ExtModule;
+	public missionModule: MissionModule;
 
 	private modules: Module[];
 
@@ -188,8 +192,11 @@ export class SQFLintServer {
 		this.loadEvents();
 
 		this.extModule = new ExtModule(this);
+		this.missionModule = new MissionModule(this);
+
 		this.modules = [
-			this.extModule
+			this.extModule,
+			this.missionModule
 		];
 
 		this.connection = createConnection(new IPCMessageReader(process), new IPCMessageWriter(process));
@@ -225,7 +232,8 @@ export class SQFLintServer {
 			ignoredVariables: [],
 			includePrefixes: {},
 			discoverDescriptionFiles: true,
-			descriptionFiles: []
+			descriptionFiles: [],
+			contextSeparation: true
 		};
 
 		this.ignoredVariablesSet = {};
@@ -247,6 +255,7 @@ export class SQFLintServer {
 		this.settings.checkPaths = settings.sqflint.checkPaths;
 		this.settings.discoverDescriptionFiles = settings.sqflint.discoverDescriptionFiles;
 		this.settings.descriptionFiles = settings.sqflint.descriptionFiles;
+		this.settings.contextSeparation = settings.sqflint.contextSeparation;
 
 		this.ignoredVariablesSet = {};
 		this.settings.ignoredVariables.forEach((v) => {
@@ -445,7 +454,7 @@ export class SQFLintServer {
 
 			this.documentation = JSON.parse(data.toString());
 
-			for(let ident in this.documentation) {
+			for (let ident in this.documentation) {
 				if (this.operators[ident]) {
 					for(let i in this.operators[ident]) {
 						this.operators[ident][i].name = this.documentation[ident].title;
@@ -509,7 +518,8 @@ export class SQFLintServer {
 							pathsRoot: this.workspaceRoot || fs_path.dirname(Uri.parse(textDocument.uri).fsPath),
 							checkPaths: this.settings.checkPaths,
 							ignoredVariables: this.settings.ignoredVariables,
-							includePrefixes: this.settings.includePrefixes
+							includePrefixes: this.settings.includePrefixes,
+							contextSeparation: this.settings.contextSeparation
 						}
 
 						client.parse(uri.fsPath, contents, options)
@@ -588,6 +598,11 @@ export class SQFLintServer {
 
 										// Skip user defined functions
 										if (this.extModule.getFunction(item.ident.toLowerCase())) {
+											return;
+										}
+
+										// Skip mission variables
+										if (this.missionModule.getVariable(item.ident.toLowerCase())) {
 											return;
 										}
 
@@ -847,7 +862,9 @@ export class SQFLintServer {
 	 * Creates formatted decoumentation.
 	 */
 	private buildHoverDocs(docs: WikiDocumentation) {
-		let texts: MarkedString[] = [];
+		let texts: MarkedString[] = [
+			docs.description.formatted
+		];
 
 		for(let s in docs.signatures) {
 			let sig = docs.signatures[s];
@@ -862,8 +879,6 @@ export class SQFLintServer {
 				value: ss
 			});
 		}
-
-		texts.push(docs.description.formatted);
 
 		return texts;
 	}
@@ -979,7 +994,7 @@ export class SQFLintServer {
 
 			// Add workspace root if needed
 			if (!fs_path.isAbsolute(string)) {
-				string = this.workspaceRoot + "/" + string;
+				string = fs_path.join(fs_path.dirname(Uri.parse(params.textDocument.uri).fsPath), string);
 			}
 
 			if (fs.existsSync(string)) {
@@ -1151,6 +1166,14 @@ export class SQFLintServer {
 				}
 			}
 
+			let local = this.findLocalVariables(params.textDocument, hover)
+			local.forEach(local => {
+				items.push({
+					label: local.name,
+					kind: CompletionItemKind.Variable
+				});
+			})
+
 			for (let ident in this.globalVariables) {
 				let variable = this.globalVariables[ident];
 
@@ -1173,6 +1196,14 @@ export class SQFLintServer {
 						kind: CompletionItemKind.Enum
 					});
 				}
+			}
+
+			for (let ident in this.globalMacros) {
+				let macro = this.globalMacros[ident];
+				items.push({
+					label: macro.name,
+					kind: CompletionItemKind.Enum
+				});
 			}
 		}
 
@@ -1273,6 +1304,18 @@ export class SQFLintServer {
 		let ns;
 		return typeof(ns = this.documentVariables[document.uri]) !== "undefined" &&
 			typeof(ns[name]) !== "undefined";
+	}
+
+	/**
+	 * Finds local variables matching part specified query.
+	 */
+	private findLocalVariables(document: TextDocumentIdentifier, query: string): DocumentVariable[] {
+		let ns: DocumentVariablesList;
+		if (typeof(ns = this.documentVariables[document.uri]) === "undefined")
+			return null;
+		return Object.keys(ns)
+			.filter(name => name.toLocaleLowerCase().indexOf(query.toLowerCase()) >= 0)
+			.map(name => ns[name])
 	}
 
 	/**

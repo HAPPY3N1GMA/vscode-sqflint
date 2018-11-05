@@ -1,3 +1,44 @@
+# Version 0.9.6
+ * Fixed macros in macros not being properly parsed (#41)
+ * Fixed `or` not accepting `not` as right argument (#24)
+
+# Version 0.9.5
+ * Fixed multi-line macros breaking locations of messages
+ * Fixed defines with more than 1 whitespaces being ignored (#40)
+ * Fixed some issues with context separation (#37)
+
+# Version 0.9.4
+ * Fixed `mission.sqm` scanner not loading logics
+
+# Version 0.9.3
+ * Added `mission.sqm` scanner, which will discover objects and markers defined in editor. (only works on debinarized missions)
+
+# Version 0.9.2
+ * Added ACE3 functions
+ * Fixed issues with multiline macros
+ * Fixed issues with macros that could lead to infinite loop
+ * Fixed GoTo not working on #include paths
+
+# Version 0.9.1
+ * Added new sqf functions
+ * Fixed some issues with hpp parser (allowed classnames beginning with numbers, allowed inner array definiton with [], allowed decimal number definition without 0 (ex .5))
+ * Fixed local variables not showing in autocomplete
+
+# Version 0.9.0
+ * Added context separation, that can detect undefined variables in different contexts in same file (can have false positives, can be disabled)
+ * Ignored variables array now accepts wildcards (#31)
+ * More robust callable check (#25, #35)
+
+# Version 0.8.8
+ * Fixed links in hover docs for functions (#34)
+ * Fixed hover docs for some functions and operators
+ * Switched order of hover docs to display syntax first (to be in line with other vscode extension)
+
+# Version 0.8.7
+ * Fixed issue with empty classes in hpp files (#32)
+ * Fixed macro support in hpp files (thanks veteran29)
+ * Added support for `#` operator (#30)
+
 # Version 0.8.6
  * `description.ext` files in subfolders of workspace will now be properly loaded
  * Added `discoverDescriptionFiles` options, which allows user to enable/disable automatic searching for `description.ext` files

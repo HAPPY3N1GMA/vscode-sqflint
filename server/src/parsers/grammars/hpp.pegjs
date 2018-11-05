@@ -25,20 +25,20 @@ ClassStatements
   = head:ClassStatement tail:(__ stat:ClassStatement { return stat })* {
   	return [head].concat(tail)
   }
-  
+
 ClassStatement
   = dec:VariableDeclaration { return dec }
   / dec:ClassDeclaration { return dec }
-  
+
 ClassDeclaration
   = "class" __ name:Identifier
     extend:(__ ":" __ id:Identifier {return id})? __
-    "{" __ body:ClassBody? __ "}" EOS? {
+    body: ("{" __ body:ClassBody? __ "}" {return body})? EOS? {
     	return {
         	"class": {
             	"name": name,
               "extends": extend,
-              "body": body,
+              "body": body || { "variables": {}, "classes": {} },
               "location": location()
             }
         }
@@ -47,24 +47,37 @@ ClassDeclaration
 VariableDeclaration
   = ArrayDeclaration
   / NormalDeclaration
-  
+
 NormalDeclaration
   = name:Identifier __ "=" __ value:VariableValue EOS {
   	return {
     	"variable": name,
-        "value": value
+      "value": value
      }
   }
-  
+
 VariableValue
-  = num:NumericalExpression { return num } 
+  = num:NumericalExpression { return num }
+  / macro:MacroValue { return macro }
   / str:StringLiteral { return str }
   / trans:TranslationIdentifier { return trans }
-  / macro:Identifier { return { macro: macro } }
+
+MacroValue
+  = macro:Identifier params:(__ "(" __ p:MacroParams __ ")" { return p })? {
+    return "MACRO{" + macro + "("+ (params || '') + ")" + "}"
+  }
+
+MacroParams
+  = head:VariableValue tail:(__ "," __ val:VariableValue {return val})* {
+    if(tail.length)
+	    return head + "," + tail.join(",")
+    return head
+  }
 
 ArrayVariableValue
-  = VariableValue 
-  / arr:ArrayValues { return arr }
+  = VariableValue
+  / ArrayValues
+  / InnerArrayValues
 
 NumericalExpression "numerical formula"
   = head:NumericalValue tail:(__ operator:ExpressionOperator __ value:NumericalValue { return operator + value })* {
@@ -84,9 +97,11 @@ ExpressionOperator
 NumericalValue "number"
   = "(" __ exp:NumericalExpression __ ")" { return "(" + exp + ")" }
   / prefix:"0x" value:[0-9A-Fa-f]+ { return prefix + value.join("") }
-  / prefix:[+-]? vals:Digit+ tail:("." suffix:Digit*)? supertail:("e" NumericalValue)? { return vals.join("") }
+  / prefix:[+-]? vals:Digit+ tail:("." suffix:Digit*)? supertail:("e" NumericalValue)? { return vals.join("") + (tail ? ('.' + tail[1].join) : '') }
+  / prefix:[+-]? "." suffix:Digit* supertail:("e" NumericalValue)? { return '0.' + suffix.join("") }
+  / MacroValue
   / Identifier
-  
+
 ArrayDeclaration
   = name:Identifier __ "[]" __ "=" __ value:ArrayValues EOS {
     return {
@@ -100,6 +115,10 @@ ArrayValues
   / "{" __ "}" { return [] }
   / macro:Identifier { return { "macro": macro } }
 
+InnerArrayValues
+  = "[" __ vals:ArrayValue __ "]" { return vals }
+  / "[" __ "]" { return [] }
+
 ArrayValue
   = head:ArrayVariableValue tail:(__ "," __ val:ArrayVariableValue {return val})* ","? {
     return [head].concat(tail)
@@ -111,12 +130,12 @@ Identifier "identifier"
   }
 
 IdentifierStart
-  = [A-Za-z_]
+  = [A-Za-z_0-9]
 
 IdentifierPart
   = IdentifierStart
   / Digit
-  
+
 TranslationIdentifier
   = "$" ident:Identifier { return "$" + ident }
 
@@ -128,7 +147,7 @@ __
 
 _
   = (WhiteSpace / MultiLineCommentNoLineTerminator)*
-  
+
 EOS
   = __ ";"
   / _ SingleLineComment? LineTerminatorSequence
@@ -137,10 +156,10 @@ EOS
 
 EOF
   = !.
-  
+
 SourceCharacter
   = .
-  
+
 WhiteSpace "whitespace"
   = "\t"
   / "\v"
@@ -149,7 +168,7 @@ WhiteSpace "whitespace"
   / "\u00A0"
   / "\uFEFF"
   / Zs
- 
+
 LineTerminator
   = [\n\r\u2028\u2029]
 
@@ -172,7 +191,7 @@ MultiLineCommentNoLineTerminator
 
 SingleLineComment
   = "//" (!LineTerminator SourceCharacter)*
-  
+
 StringLiteral "string"
   = '"' chars:DoubleStringCharacter* '"' { return chars.join("") }
 
@@ -180,6 +199,6 @@ DoubleStringCharacter
   = "\"" "\""
   / !('"' / LineTerminator) SourceCharacter { return text() }
   / LineContinuation
-  
+
 LineContinuation
   = "\\" LineTerminatorSequence { return ""; }
